@@ -58,7 +58,7 @@ export class Mook
 
 	async startTurn ()
 	{
-		// Need to take control in order to check token's vision
+		console.log(`Starting turn for ${this.token.name || 'unnamed mook'}`);
 		this.takeControl ();
 		this.mookModel.startTurn ();
 
@@ -66,6 +66,7 @@ export class Mook
 		this._segment = this._start;
 
 		this._isExplorer = this.isExplorer;
+		console.log(`Explorer status: ${this._isExplorer}`);
 
 		this.time = this.mookModel.time;
 		this._visibleTargets.splice (0);
@@ -79,7 +80,7 @@ export class Mook
 		this.pathManager.clearAll ();
 
 		this._visibleTargets = game.combat.combatants.filter (combatant => {
-			const id = combatant.data.tokenId;
+			const id = combatant.tokenId;
 			// Even mooks won't target themselves on purpose
 			if (id === this.token.id) return false;
 
@@ -95,7 +96,7 @@ export class Mook
 			if (this.mookModel.hasVision && ! this.canSee (token.id)) return false;
 
 			return true;
-		}).map (c => { return canvas.tokens.get (c.data.tokenId); });
+		}).map (c => { return canvas.tokens.get (c.tokenId); });
 
 		// Todo: compute paths between tokens when one moves and then select paths here. 
 		for (let t of this.visibleTargets)
@@ -383,7 +384,7 @@ export class Mook
 
 	async cleanup ()
 	{
-		// todo: Undo all actions
+		console.log(`Cleaning up mook: ${this.token.name || 'unnamed'}`);
 		this.utility.clearHighlights ();
 		this.clearTargets ();
 		await this.endTurn ();
@@ -393,6 +394,7 @@ export class Mook
 	// todo: teach mooks how to love themselves
 	handleFailure (error_)
 	{
+		console.log(`Mook failure: ${error_.message}`);
 		throw error_;
 	}
 
@@ -460,7 +462,7 @@ export class Mook
 
 		let error = false;
 
-		await this.rotate (this.segment.radialDistToSegment (segment_, this.token.data.rotation, AngleTypes.DEG));
+		await this.rotate (this.segment.radialDistToSegment (segment_, this.token.rotation, AngleTypes.DEG));
 		await this.tokenDoc.update ({ x: segment_.point.px, y: segment_.point.py }).catch (err => {
 			ui.notifications.warn (err);
 			error = true;
@@ -527,14 +529,13 @@ export class Mook
 
 	clearTargets ()
 	{
-		for (const t of this._targetedTokens)
-			t.setTarget (false, { releaseOthers: true, groupSelection: false });
-
-		this._targetedTokens = new Array ();
+		game.user.targets.clear();
+		this._currentTarget = null;
 	}
 
 	target (token_)
 	{
+		console.log('target token: ', token_);
 		this._targetedTokens.push (token_);
 		token_.setTarget (true, { releaseOthers: true, groupSelection: false });
 	}
@@ -574,7 +575,7 @@ export class Mook
 
 	get point () { return this._segment.point; }
 
-	get rotation () { return this.token.data.rotation; }
+	get rotation () { return this.token.rotation; }
 
 	get rotationDelay ()
 	{
@@ -592,7 +593,8 @@ export class Mook
 	get token () { return this._token; }
 	get tokenDoc () { return game.scenes.active.tokens.get(this._token.id) }
 
-	get tokenLocked () { token.data.lockRotation; }
+	//where is this located and used?
+	get tokenLocked () { return this.token.lockRotation; }
 
 	get visibleTargets () { return this._visibleTargets; }
 }

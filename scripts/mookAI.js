@@ -9,6 +9,23 @@ function getDistanceMetric ()
 	return MinkowskiParameter[game.settings.settings.get ("mookAI.DistanceMetric").choices[game.settings.get ("mookAI", "DistanceMetric")]];
 }
 
+function log(message, type = "info") {
+    const prefix = "mookAI | ";
+    switch(type) {
+        case "error":
+            console.error(prefix + message);
+            break;
+        case "warn":
+            console.warn(prefix + message);
+            break;
+        case "debug":
+            console.debug(prefix + message);
+            break;
+        default:
+            console.log(prefix + message);
+    }
+}
+
 export function initAI ()
 {
 	mookAI = new MookAI ();
@@ -199,16 +216,16 @@ export class MookAI
 		});
 
 		Hooks.on ("createCombatant", (combatant_, config_, id_) => {
-			this.addCombatant (id_, combatant_.data.tokenId);
+			this.addCombatant (combatant_.combat.id, combatant_.tokenId);
 		});
 		Hooks.on ("deleteCombatant", (combatant_, config_, id_) => {
-			this.deleteCombatant (id_, combatant_.data.tokenId);
+			this.deleteCombatant (id_, combatant_.tokenId);
 		});
 		Hooks.on ("createCombat", (combat_, config_, id_) => {
-			this.combatStart (combat_);
+			this.combatStart (combat_, id_);
 		});
 		Hooks.on ("deleteCombat", (combat_, config_, id_) => {
-			this.combatEnd (combat_);
+			this.combatEnd (combat_, id_);
 		});
 		Hooks.on ("updateScene", (...args) => { this.handleSceneChange () });
 
@@ -290,6 +307,10 @@ export class MookAI
 	{
 		const mook = new Mook (canvas.tokens.get (id_), this.metric);
 		this.combats.get (combatId_).set (id_, mook);
+		console.log('adding mook: ', combatId_, id_);
+		console.log('combats: ', this.combats)
+		console.log('combat: ', this.combats.get (combatId_))
+		console.log('mook: ', mook)
 		return mook;
 	}
 
@@ -312,40 +333,46 @@ export class MookAI
 		await game.combat.activate ();
 	}
 
-	combatStart (combat_)
+	combatStart (combat_, id_)
 	{
-		if (combat_.data.scene !== game.scenes.active.id)
-			return;
-
-		if (this.combats.get (combat_.id))
-		{
-			console.log ("mookAI | Attempted to start combat that is already active.");
+		log(`Starting combat: ${id_}`);
+		
+		if (combat_._source.scene !== game.scenes.active.id) {
+			log("Combat not in active scene, skipping", "debug");
 			return;
 		}
 
-		let newMooks = new Map ();
+		if (this.combats.get(combat_.id)) {
+			log("Combat already active, skipping", "warn");
+			return;
+		}
 
-		combat_.combatants.forEach (combatant => {
-			const newToken = canvas.tokens.get (combatant.data.tokenId);
+		let newMooks = new Map();
+		log("Adding combatants to combat");
 
-			if (! newToken)
-			    return;
-
-			newMooks.set (combatant.data.tokenId, new Mook (newToken, this.metric));
+		combat_.combatants.forEach(combatant => {
+			const newToken = canvas.tokens.get(combatant.tokenId);
+			if (!newToken) {
+				log(`Failed to find token for combatant: ${combatant.tokenId}`, "warn");
+				return;
+			}
+			log(`Adding mook for token: ${newToken.name || combatant.tokenId}`, "debug");
+			newMooks.set(combatant.tokenId, new Mook(newToken, this.metric));
 		});
 
-		this._combats.set (combat_.id, newMooks);
+		this._combats.set(combat_.id, newMooks);
+		log(`Combat started with ${newMooks.size} mooks`);
 	}
 
-	combatEnd (combat_)
+	combatEnd (combat_, id_)
 	{
-		if (! this.combats.has (combat_.id))
+		if (! this.combats.has (id_))
 		{
-			console.log ("mookAI | Attempted to delete combat that does not exist.");
+			log("Attempted to delete combat that does not exist.", "warn");
 			return;
 		}
 
-		this.combats.delete (combat_.id);
+		this.combats.delete (id_);
 	}
 
 	async endTurn ()
@@ -376,16 +403,24 @@ export class MookAI
 
 	async takeNextTurn ()
 	{
-		this.applySettings ();
+		log("Taking next turn");
+		this.applySettings();
 
-		// Throws if there is not combat on the *active* scene
-		if (this._combats.size === 0)
-			await this.startCombats ();
+		if (this._combats.size === 0) {
+			log("No active combats, starting combats", "debug");
+			await this.startCombats();
+		}
 
-		let success = await this.takeMookTurn (this.getMook (this.getCombat (), game.combat.current.tokenId));
+		const currentTokenId = game.combat.current.tokenId;
+		log(`Getting mook for token ID: ${currentTokenId}`, "debug");
+		
+		let success = await this.takeMookTurn(this.getMook(this.getCombat(), currentTokenId));
+		log(`Turn completed with success: ${success}`);
 
-		if (success)
-			this.endTurn ();
+		if (success) {
+			log("Ending turn automatically", "debug");
+			this.endTurn();
+		}
 	}
 
 	// Takes a turn for all selected tokens regardless of initiative
@@ -406,34 +441,45 @@ export class MookAI
 		{
 			if (! mook_)
 			{
-				ui.notifications.warn ("mookAI | Mook not found in scene. Please verify that the current scene is active.");
-				throw "Failed to find mook (id: " + game.combat.current.tokenId + ") in scene (id: " + game.scenes.active.id + "). The most likely cause is that you are viewing an inactive scene. Please activate the scene before using mookAI. If the scene is already active, please submit a bug report!";
+				const errorMsg = `Failed to find mook (id: ${game.combat.current.tokenId}) in scene (id: ${game.scenes.active.id})`;
+				log(errorMsg, "error");
+				ui.notifications.warn("mookAI | Mook not found in scene. Please verify that the current scene is active.");
+				throw new Error(errorMsg);
 			}
-	
+
 			this._busy = true;
-	
+			log(`Starting turn for mook: ${mook_.token.name || 'unnamed'}`, "debug");
+
 			await mook_.startTurn ();
+			log("Sensing surroundings", "debug");
 			await mook_.sense ();
+			log("Planning turn", "debug");
 			mook_.planTurn ();
+			log("Executing actions", "debug");
 			await mook_.act ();
+			log("Ending turn", "debug");
 			await mook_.endTurn ();
-	
+
 			this._busy = false;
 			return true;
 		}
 		catch (e)
 		{
-			if (! (e instanceof Abort))
+			if (!(e instanceof Abort))
 			{
-				console.error ("mookAI | Encountered unrecoverable error:");
-				console.error (e);
+				log("Encountered unrecoverable error:", "error");
+				console.error(e);
 			}
 			else
 			{
-				console.log ("mookAI | " + e);
+				log(e.message);
 			}
 
-			if (mook_) await mook_.cleanup ();
+			if (mook_)
+			{
+				log("Cleaning up after error", "debug");
+				await mook_.cleanup ();
+			}
 			this._busy = false;
 			return false;
 		}

@@ -184,7 +184,7 @@ export class MookModel
 	_attack (action_) { throw "Game system not supported"; }
 
 	// Do not override
-	get gridDistance () { return game.scenes.active.data.gridDistance; }
+	get gridDistance () { return game.scenes.active.grid.distance; }
 	get hasMele () { return this.settings.useMele && this._hasMele; }
 	get hasRanged () { return this.settings.useRanged && this._hasRanged; }
 	get hasSight () { return this.token.hasSight; }
@@ -229,13 +229,24 @@ class MookModel5e extends MookModel
 
 	async doAttack (name_)
 	{
-		if (game.modules.get("betterrolls5e")?.active)
-		{
-			BetterRolls.quickRoll (name_);
+		const item = this.token.actor.items.find(i => i.name === name_);
+		if (!item) {
+			console.warn(`MookAI | Could not find item named ${name_}`);
+			return;
 		}
-		else
-		{
-			game.dnd5e.rollItemMacro(name_);
+
+		// Check if we have a valid target set up
+		if (!this._currentTarget) {
+			console.warn("MookAI | No target set for attack");
+			return;
+		}
+
+		if (game.modules.get("betterrolls5e")?.active) {
+			BetterRolls.quickRoll(name_);
+		} else {
+			await item.use({
+				targets: new Set([this._currentTarget])
+			});
 		}
 	}
 
@@ -248,7 +259,7 @@ class MookModel5e extends MookModel
 		if (! this.canAttack)
 			return;
 
-		const name = action_.data.weapon.data.name;
+		const name = action_.data.weapon.name;
 
 		this._actions.filter (a => a.type === "attack" && a.can ()).forEach (a => {
 			if (a.data.duration === "full")
@@ -359,14 +370,14 @@ class MookModel5e extends MookModel
 	get meleWeapons ()
 	{
 		return this.token.actor.itemTypes.weapon.filter (w => {
-			return w.hasAttack && w.data.data.actionType === "mwak";
+			return w.hasAttack && w.system.actionType === "mwak";
 		});
 	}
 
 	get rangedWeapons ()
 	{
 		return this.token.actor.itemTypes.weapon.filter (w => {
-			return w.hasAttack && w.data.data.actionType === "rwak";
+			return w.hasAttack && w.system.actionType === "rwak";
 		});
 	}
 
@@ -382,7 +393,7 @@ class MookModel5e extends MookModel
 
 	get meleRange ()
 	{
-		const dist = this.meleWeapon.data.data?.range?.value;
+		const dist = this.meleWeapon.system?.range?.value;
 
 		if (! dist) return this.settings.standardMeleWeaponTileRange;
 
@@ -391,7 +402,7 @@ class MookModel5e extends MookModel
 
 	get rangedRange ()
 	{
-		const dist = this.rangedWeapon.data.data?.range?.value;
+		const dist = this.rangedWeapon.system?.range?.value;
 
 		if (! dist) return this.settings.standardRangedWeaponTileRange;
 
@@ -429,11 +440,11 @@ class MookModel5e extends MookModel
 	// Get various token data
 	getCurrentHealth (token_ = this.token)
 	{
-		return token_.actor.data.data.attributes.hp.value;
+		return token_.actor.system.attributes.hp.value;
 	}
 	getMaxHealth (token_ = this.token)
 	{
-		return token_.actor.data.data.attributes.hp.max;
+		return token_.actor.system.attributes.hp.max;
 	}
 
 	get hasDashAction () { return this.settings.dashActionsPerTurn > 0; }
@@ -449,7 +460,7 @@ class MookModel5e extends MookModel
 	// todo: evaluate units
 	get time ()
 	{
-		let speed = parseInt (this.token.actor.data.data.attributes.movement.walk, 10);
+		let speed = parseInt (this.token.actor.system.attributes.movement.walk, 10);
 		
 		if (! speed)
 			speed = 30;
