@@ -226,6 +226,49 @@ class MookModel5e extends MookModel
 		this.actionsUsed = 0;
 		// Creatures in 5e may only use one bonus action
 		this.bonusActionUsed = false;
+		this.multiattackRules = this._parseMultiattack();
+	}
+
+	_parseMultiattack() {
+		const features = this.token.actor.items.filter(i => 
+			i.type === "feat" && 
+			i.name.toLowerCase().includes("multiattack")
+		);
+
+		if (!features.length) return null;
+
+		const description = features[0].system.description.value;
+		if (!description) return null;
+
+		// Parse the HTML description
+		const parser = new DOMParser();
+		const doc = parser.parseFromString(description, 'text/html');
+		const text = doc.body.textContent.toLowerCase();
+
+		// Common patterns
+		const numberWords = ['one', 'two', 'three', 'four', 'five', 'six'];
+		const attacks = {};
+
+		// Parse numbers (both written and numeric)
+		numberWords.forEach((word, index) => {
+			if (text.includes(word)) {
+				const match = text.match(new RegExp(`${word}\\s+([\\w\\s]+)(?:attack|attacks)`));
+				if (match) {
+					attacks[match[1].trim()] = index + 1;
+				}
+			}
+		});
+
+		// Parse numeric values
+		const numericMatch = text.match(/(\d+)\s+([\w\s]+)(?:attack|attacks)/g);
+		if (numericMatch) {
+			numericMatch.forEach(match => {
+				const [_, num, type] = match.match(/(\d+)\s+([\w\s]+)(?:attack|attacks)/);
+				attacks[type.trim()] = parseInt(num);
+			});
+		}
+
+		return attacks;
 	}
 
 	async doAttack (name_)
@@ -250,16 +293,29 @@ class MookModel5e extends MookModel
 
 	async attack (action_)
 	{
-		// As implemented, DnD5e doesn't care what type of attack it is, but it must still be an attack
-		if (action_.actionType !== ActionType.ATTACK)
-			return;
-
-		if (! this.canAttack)
-			return;
+		if (action_.actionType !== ActionType.ATTACK) return;
+		if (!this.canAttack) return;
 
 		const name = action_.data.weapon.name;
+		
+		// Check for multiattack rules
+		if (this.multiattackRules) {
+			// Find matching attack type (fuzzy match)
+			const attackType = Object.keys(this.multiattackRules).find(type => 
+				name.toLowerCase().includes(type)
+			);
+			
+			if (attackType) {
+				const numAttacks = this.multiattackRules[attackType];
+				for (let i = 0; i < numAttacks; i++) {
+					await this.doAttack(name);
+				}
+				return;
+			}
+		}
 
-		this._actions.filter (a => a.type === "attack" && a.can ()).forEach (a => {
+		// Fall back to original attack logic if no multiattack rule matches
+		this._actions.filter(a => a.type === "attack" && a.can()).forEach(a => {
 			if (a.data.duration === "full")
 			{
 				if (this.actionsUsed >= this.settings.actionsPerTurn) return;

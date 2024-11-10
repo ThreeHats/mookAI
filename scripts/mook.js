@@ -300,7 +300,7 @@ export class Mook
 				if (this.debug) console.log("Attacking!");
 				
 				const midiActive = game.modules.get("midi-qol")?.active;
-				const waitForMidi = game.settings.get("mookAI", "waitForMidiQoL") ?? true;
+				const waitForMidi = game.settings.get("mookAI", "WaitForMidiQoL") ?? true;
 
 				if (midiActive && waitForMidi) {
 					// Create a promise that resolves when all attacks and their rolls are complete
@@ -347,13 +347,86 @@ export class Mook
 					this.utility.highlightPoints (action.data.path.path.map (s => s.origin));
 				}
 
-				let dialogContent = "<p>Take action?</p>";
+				// Get the planned attack action and all available actions
+				const plannedAction = this.plan.find(a => a.actionType === ActionType.ATTACK);
+				const weapon = plannedAction?.data?.weapon;
+				const allActions = this.token.actor.items.filter(i => i.type === "weapon" || (i.type === "feat" && i.name.toLowerCase().includes("multiattack")));
+
+				// Create the dialog content
+				let dialogContent = `
+					<div class="mook-action-dialog">
+						<h3>Current Action</h3>
+						<div class="action-card selected">
+							<img src="${weapon?.img}" width="36" height="36"/>
+							<div class="action-details">
+								<h4>${weapon?.name}</h4>
+								<p>${weapon?.system?.description?.value || ''}</p>
+								<div class="action-cost">
+									${weapon?.system?.activation?.type || ''} action
+									(${weapon?.system?.activation?.cost || 1} actions)
+								</div>
+							</div>
+						</div>
+						
+						<h3>Available Actions</h3>
+						<div class="action-list">
+							${allActions.map(item => `
+								<div class="action-card" data-item-id="${item.id}">
+									<img src="${item.img}" width="36" height="36"/>
+									<div class="action-details">
+										<h4>${item.name}</h4>
+										<p>${item.system?.description?.value || ''}</p>
+										<div class="action-cost">
+											${item.system?.activation?.type || ''} action
+											(${item.system?.activation?.cost || 1} actions)
+										</div>
+									</div>
+								</div>
+							`).join('')}
+						</div>
+						
+						<h3>Multiattack Details</h3>
+						<div class="multiattack-info">
+							${this.mookModel.multiattackRules ? 
+								Object.entries(this.mookModel.multiattackRules)
+									.map(([type, count]) => `<p>${count}x ${type}</p>`)
+									.join('') : 
+								'No multiattack available'}
+						</div>
+					</div>
+				`;
 
 				if (this.token.actor.hasPlayerOwner)
 					dialogContent = this.pcWarning + dialogContent;
-	
-				let dialogPromise = new Promise ((resolve, reject) => {
-					const dialog = new Dialog ({
+
+				// Add some basic CSS
+				dialogContent = `
+					<style>
+						.mook-action-dialog .action-card {
+							display: flex;
+							gap: 10px;
+							padding: 5px;
+							margin: 5px 0;
+							border: 1px solid #ccc;
+							border-radius: 5px;
+						}
+						.mook-action-dialog .action-card.selected {
+							border-color: #ff6400;
+							background: rgba(255, 100, 0, 0.1);
+						}
+						.mook-action-dialog .action-details {
+							flex: 1;
+						}
+						.mook-action-dialog .action-cost {
+							font-style: italic;
+							color: #666;
+						}
+					</style>
+					${dialogContent}
+				`;
+
+				let dialogPromise = new Promise((resolve, reject) => {
+					const dialog = new Dialog({
 						title: "Confirm Mook Action",
 						content: dialogContent,
 						buttons: {
@@ -373,6 +446,20 @@ export class Mook
 					dialog.render (true);
 					dialog.position.top = 120;
 					dialog.position.left = 120;
+
+					// Add click handlers for action selection
+					setTimeout(() => {
+						const actionCards = dialog.element.find('.action-card');
+						actionCards.on('click', (event) => {
+							const newItemId = event.currentTarget.dataset.itemId;
+							const newItem = this.token.actor.items.get(newItemId);
+							if (newItem) {
+								// Update the planned attack action
+								plannedAction.data.weapon = newItem;
+								dialog.render(true);
+							}
+						});
+					}, 100);
 				});
 
 				try {
@@ -389,6 +476,7 @@ export class Mook
 					if (! await this.utility.traverse (action.data.dist, this.rotationDelay, this.moveDelay))
 						this.handleFailure (new Error ("Failed to traverse path"));
 				}
+				break;
 			}
 
 			this.time -= action.cost ? action.cost : 0;
