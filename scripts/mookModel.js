@@ -111,6 +111,7 @@ export class MookModel
 	{
 		this.settings = settings_;
 		this._token = token_;
+		this._currentTarget = null;
 
 		this._actions = new Array ();
 		this._targetHistory = new Array ();
@@ -235,18 +236,15 @@ class MookModel5e extends MookModel
 			return;
 		}
 
-		// Check if we have a valid target set up
-		if (!this._currentTarget) {
-			console.warn("MookAI | No target set for attack");
-			return;
-		}
-
 		if (game.modules.get("betterrolls5e")?.active) {
 			BetterRolls.quickRoll(name_);
 		} else {
-			await item.use({
-				targets: new Set([this._currentTarget])
-			});
+			// Ensure we have a target before attacking
+			if (game.user.targets.size === 0) {
+				console.warn("MookAI | Attempted to attack without target");
+				return;
+			}
+			await item.use();
 		}
 	}
 

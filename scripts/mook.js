@@ -529,15 +529,20 @@ export class Mook
 
 	clearTargets ()
 	{
-		game.user.targets.clear();
-		this._currentTarget = null;
+		for (const t of this._targetedTokens)
+			t.setTarget (false, { releaseOthers: true, groupSelection: false });
+
+		this._targetedTokens = new Array ();
 	}
 
 	target (token_)
 	{
-		console.log('target token: ', token_);
-		this._targetedTokens.push (token_);
-		token_.setTarget (true, { releaseOthers: true, groupSelection: false });
+		if (!token_) return;
+		
+		// Clear existing targets
+		game.user.targets.clear();
+		// Add new target
+		token_.setTarget(true, { user: game.user, releaseOthers: true });
 	}
 
 	get isExploreDisabled ()
