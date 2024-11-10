@@ -297,8 +297,41 @@ export class Mook
 				this.target (action.data.target);
 				break;
 			case (ActionType.ATTACK):
-				if (this.debug) console.log ("Attacking!");
-				while (this.mookModel.canAttack) { await this.mookModel.attack (action); }
+				if (this.debug) console.log("Attacking!");
+				
+				const midiActive = game.modules.get("midi-qol")?.active;
+				const waitForMidi = game.settings.get("mookAI", "waitForMidiQoL") ?? true;
+
+				if (midiActive && waitForMidi) {
+					// Create a promise that resolves when all attacks and their rolls are complete
+					await new Promise(async (resolve) => {
+						let attacksInProgress = 0;
+						
+						const completeHook = Hooks.on('midi-qol.RollComplete', () => {
+							attacksInProgress--;
+							if (attacksInProgress === 0) {
+								Hooks.off('midi-qol.RollComplete', completeHook);
+								resolve();
+							}
+						});
+
+						while (this.mookModel.canAttack) {
+							attacksInProgress++;
+							await this.mookModel.attack(action);
+						}
+						
+						// If no attacks were made, resolve immediately
+						if (attacksInProgress === 0) {
+							Hooks.off('midi-qol.RollComplete', completeHook);
+							resolve();
+						}
+					});
+				} else {
+					// Original behavior without waiting for midi-qol
+					while (this.mookModel.canAttack) {
+						await this.mookModel.attack(action);
+					}
+				}
 				break;
 			case (ActionType.STEP):
 				if (this.debug) console.log ("Stepping");

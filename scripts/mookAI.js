@@ -177,6 +177,15 @@ export function initAI ()
 		type: Number,
 	});
 
+	game.settings.register("mookAI", "WaitForMidiQoL", {
+		name: "Wait for Midi-QoL",
+		hint: "Wait for Midi-QoL to finish processing attacks before continuing (no effect if Midi-QoL is not installed)",
+		scope: "world",
+		config: true,
+		type: Boolean,
+		default: true
+	});
+
 	Hooks.on ("ready", () => {
 		try
 		{
