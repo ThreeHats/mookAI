@@ -305,33 +305,8 @@ export class Mook
 				if (midiActive && waitForMidi) {
 					// Create a promise that resolves when all attacks and their rolls are complete
 					await new Promise(async (resolve) => {
-						let attacksInProgress = 0;
+						let attacksInProgress = action.data.attackCount || 1;
 						
-						// Pre-check multiattack count
-						if (this.mookModel.multiattackRules) {
-							const weapon = action.data.weapon;
-							const name = weapon.name;
-							const isRanged = weapon.system?.actionType === 'rwak';
-							const isMelee = weapon.system?.actionType === 'mwak';
-							const genericType = isRanged ? 'ranged' : (isMelee ? 'melee' : null);
-							
-							// Check specific weapon name first, then fallback to generic type
-							const attackType = Object.keys(this.mookModel.multiattackRules).find(type => {
-								const normalizedType = type.toLowerCase().replace(/\s+/g, '');
-								const normalizedName = name.toLowerCase().replace(/\s+/g, '');
-								return normalizedName.includes(normalizedType) || normalizedType.includes(normalizedName);
-							}) || genericType;
-
-							if (attackType && this.mookModel.multiattackRules[attackType]) {
-								attacksInProgress = this.mookModel.multiattackRules[attackType];
-							}
-						}
-
-						// If no multiattack found, set to 1
-						if (attacksInProgress === 0) {
-							attacksInProgress = 1;
-						}
-
 						console.log(`MookAI | Expecting ${attacksInProgress} attacks`);
 						
 						const completeHook = Hooks.on('midi-qol.RollComplete', () => {
@@ -395,7 +370,7 @@ export class Mook
 						<div class="action-list">
 							${allActions.map(item => {
 								// Calculate number of attacks
-								let numAttacks = 1;
+								let maxAttacks = 1;
 								const itemName = item.name.toLowerCase();
 								if (this.mookModel.multiattackRules) {
 									const attackType = Object.entries(this.mookModel.multiattackRules).find(([type, _]) => {
@@ -404,12 +379,18 @@ export class Mook
 											   (type.includes('melee') && item.system?.actionType === 'mwak') ||
 											   (type.includes('ranged') && item.system?.actionType === 'rwak');
 									});
-									if (attackType) numAttacks = attackType[1];
+									if (attackType) maxAttacks = attackType[1];
 								}
 								
 								return `
 									<div class="action-card ${item.id === weapon?.id ? 'selected' : ''}" data-item-id="${item.id}">
-										<div class="attack-count">${numAttacks}×</div>
+										<div class="attack-controls">
+											<select name="attack-count-${item.id}" class="attack-count">
+												${Array.from({length: maxAttacks}, (_, i) => i + 1).map(num => 
+													`<option value="${num}" ${num === maxAttacks ? 'selected' : ''}>${num}×</option>`
+												).join('')}
+											</select>
+										</div>
 										<img src="${item.img}" width="36" height="36"/>
 										<div class="action-details">
 											<h4>${item.name}</h4>
@@ -443,9 +424,16 @@ export class Mook
 							confirm: {
 								label: "Confirm",
 								callback: (html) => {
+									const selectedCard = html.find('.action-card.selected');
+									if (!selectedCard.length) {
+										ui.notifications.warn("Please select an action");
+										return;
+									}
+									const itemId = selectedCard.data('item-id');
 									resolve({
 										movement: html.find('input[name="movement"]:checked').val(),
-										selectedActionId: html.find('.action-card.selected').data('item-id')
+										selectedActionId: itemId,
+										attackCount: parseInt(html.find(`select[name="attack-count-${itemId}"]`).val())
 									});
 								}
 							},
@@ -460,6 +448,10 @@ export class Mook
 								html.find('.action-card').removeClass('selected');
 								$(this).addClass('selected');
 							});
+							// Pre-select the planned weapon if it exists
+							if (weapon) {
+								html.find(`.action-card[data-item-id="${weapon.id}"]`).addClass('selected');
+							}
 						},
 						close: () => reject(new Abort("Dialog closed"))
 					}).render(true);
@@ -481,6 +473,7 @@ export class Mook
 					const attackAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
 					if (attackAction) {
 						attackAction.data.weapon = newWeapon;
+						attackAction.data.attackCount = dialogResult.attackCount;
 					}
 				}
 				break;

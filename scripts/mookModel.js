@@ -335,55 +335,23 @@ class MookModel5e extends MookModel
 		if (!this.canAttack) return;
 
 		const name = action_.data.weapon.name;
-		const weapon = action_.data.weapon;
 		console.log(`MookAI | Attempting attack with ${name}`);
 		
-		const attackDelay = game.settings.get("mookAI", "AttackDelay") ?? 500; // Default 500ms delay
-		
-		// Check for multiattack rules
-		if (this.multiattackRules && !action_.data.isMultiattack) {
-			console.log('MookAI | Multiattack rules found:', this.multiattackRules);
-			
-			// Check for weapon-specific multiattack
-			const attackType = Object.keys(this.multiattackRules).find(type => {
-				const normalizedType = type.toLowerCase().replace(/\s+/g, '');
-				const normalizedName = name.toLowerCase().replace(/\s+/g, '');
-				console.log(`MookAI | Comparing "${normalizedType}" with "${normalizedName}"`);
-				return normalizedName.includes(normalizedType) || normalizedType.includes(normalizedName);
-			});
+		const attackDelay = game.settings.get("mookAI", "AttackDelay") ?? 500;
+		const numAttacks = action_.data.attackCount || 1;
 
-			// Check for generic melee/ranged multiattack
-			const isRanged = weapon.system?.actionType === 'rwak';
-			const isMelee = weapon.system?.actionType === 'mwak';
-			const genericType = isRanged ? 'ranged' : (isMelee ? 'melee' : null);
-			
-			const matchedType = attackType || (this.multiattackRules[genericType] ? genericType : null);
-			
-			if (matchedType) {
-				const numAttacks = this.multiattackRules[matchedType];
-				console.log(`MookAI | Matched ${matchedType} for ${numAttacks} attacks`);
-				
-				if (this.actionsUsed < this.settings.actionsPerTurn) {
-					console.log(`MookAI | Executing ${numAttacks} attacks as part of multiattack`);
-					for (let i = 0; i < numAttacks; i++) {
-						console.log(`MookAI | Attack ${i + 1} of ${numAttacks}`);
-						await this.doAttack(name);
-						if (i < numAttacks - 1) { // Don't delay after the last attack
-							await new Promise(resolve => setTimeout(resolve, attackDelay));
-						}
-					}
-					++this.actionsUsed;
-					console.log('MookAI | Multiattack action used, total actions:', this.actionsUsed);
-					return;
+		if (this.actionsUsed < this.settings.actionsPerTurn) {
+			console.log(`MookAI | Executing ${numAttacks} attacks`);
+			for (let i = 0; i < numAttacks; i++) {
+				console.log(`MookAI | Attack ${i + 1} of ${numAttacks}`);
+				await this.doAttack(name);
+				if (i < numAttacks - 1) {
+					await new Promise(resolve => setTimeout(resolve, attackDelay));
 				}
-			} else {
-				console.log('MookAI | No matching multiattack type found for:', name);
 			}
+			++this.actionsUsed;
+			return;
 		}
-		
-		// Single attack if no multiattack found
-		await this.doAttack(name);
-		++this.actionsUsed;
 	}
 
 	_resetResources ()
