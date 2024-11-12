@@ -29,7 +29,12 @@ export class MookModelSettings
 		// todo: Use the token's actor to access individualized mook settings
 		const actor = token_.actor;
 
-		this.mookType = getMookType (game.settings.get ("mookAI", "MookType"));
+		this.mookType = getMookType(game.settings.get("mookAI", "MookType"));
+		console.log('MookAI | Setting mook type:', {
+			rawType: game.settings.get("mookAI", "MookType"),
+			resolvedType: this.mookType,
+			tokenName: token_.name
+		});
 
 		// false indicates "do not automate this token"
 		// todo: default false when actor-level configuration is available

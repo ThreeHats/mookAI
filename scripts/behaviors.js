@@ -36,9 +36,10 @@ export const MookTypes = Object.freeze ({
 
 export function getMookType (index_)
 {
-	if (index_ === 0)
+	if (typeof index_ === 'number' && index_ === MookTypes.EAGER_BEAVER)
 		return MookTypes.EAGER_BEAVER;
 
+	console.log('MookAI | Unsupported mook type! Defaulting to SHIA_SURPRISE');
 	return MookTypes.SHIA_SURPRISE;
 }
 
@@ -67,6 +68,11 @@ export class Behaviors
 	// The mooks behaviors are (will be) configured from their actor page
 	static chooseTarget (mook_, targets_)
 	{
+		console.log('MookAI | Choosing target with behavior:', {
+			tokenName: mook_.token.name,
+			mookType: mook_.mookModel.settings.mookType,
+			availableTargets: targets_
+		});
 		switch (mook_.mookModel.settings.mookType)
 		{
 		case (MookTypes.EAGER_BEAVER):

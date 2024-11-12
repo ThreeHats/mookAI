@@ -63,9 +63,12 @@ export function initAI ()
 		hint: "Controls how mooks behave. Eager Beavers attack the closest token, using range only when there are no mele targets. Shias attack a random target in range. This feature is not fully developed. Consult documentation for specifics.",
 		scope: "world",
 		config: true,
-		default: "EAGER_BEAVER",
-		type: String,
-		choices: ["EAGER_BEAVER", "SHIA"],
+		default: 1,  // EAGER_BEAVER
+		type: Number,
+		choices: {
+        1: "EAGER_BEAVER",
+        5: "SHIA"
+    }
 	});
 
 	game.settings.register ("mookAI", "AutoEndTurn", {
