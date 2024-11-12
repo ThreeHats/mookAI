@@ -127,6 +127,13 @@ export class Mook
 
 	planTurn ()
 	{
+		console.log('MookAI | Planning turn for:', this.token.name);
+		console.log('MookAI | Available targets:', this.visibleTargets.map(t => ({
+			name: t.name,
+			disposition: t.document.disposition,
+			distance: canvas.grid.measureDistance(this.token, t)
+		})));
+
 		// Clear the previous plan
 		this.plan.splice (0);
 
@@ -195,7 +202,14 @@ export class Mook
 
 		this.plan.push (this.mookModel.faceAction (target.token));
 
-		this.plan.push (target.attackAction);
+		const attackAction = target.attackAction;
+		console.log('MookAI | Planning attack with:', {
+			weapon: attackAction.data.weapon.name,
+			properties: attackAction.data.weapon.system.properties,
+			multiattack: this.mookModel._parseMultiattack()
+		});
+
+		this.plan.push(attackAction);
 
 		this.plan.push (this.mookModel.haltAction ());
 	}

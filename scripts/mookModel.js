@@ -230,18 +230,19 @@ class MookModel5e extends MookModel
 	}
 
 	_parseMultiattack() {
+		console.log('MookAI | Parsing multiattack for:', this.token.name);
 		const features = this.token.actor.items.filter(i => 
 			i.type === "feat" && 
 			i.name.toLowerCase().includes("multiattack")
 		);
 
-		console.log('MookAI | Searching for multiattack features:', features);
-
 		if (!features.length) {
 			console.log('MookAI | No multiattack features found');
 			return null;
 		}
-
+		
+		console.log('MookAI | Found multiattack features:', features);
+		
 		const description = features[0].system.description.value;
 		if (!description) {
 			console.log('MookAI | Multiattack feature has no description');
@@ -332,13 +333,34 @@ class MookModel5e extends MookModel
 	async attack (action_)
 	{
 		if (action_.actionType !== ActionType.ATTACK) return;
-		if (!this.canAttack) return;
+		if (!this.canAttack) {
+			console.log('MookAI | Cannot attack - no actions remaining');
+			return;
+		}
 
 		const name = action_.data.weapon.name;
-		console.log(`MookAI | Attempting attack with ${name}`);
+		const multiattackRules = this._parseMultiattack();
+		console.log('MookAI | Multiattack rules:', multiattackRules);
 		
+		let numAttacks = action_.data.attackCount || 1;
+		if (multiattackRules) {
+			const weaponType = name.toLowerCase();
+			if (multiattackRules[weaponType]) {
+				numAttacks = multiattackRules[weaponType];
+				console.log(`MookAI | Using multiattack count for ${weaponType}: ${numAttacks}`);
+			} else if (multiattackRules['melee'] && action_.data.weapon.system.properties.mwak) {
+				numAttacks = multiattackRules['melee'];
+				console.log(`MookAI | Using melee multiattack count: ${numAttacks}`);
+			} else if (multiattackRules['ranged'] && action_.data.weapon.system.properties.rwak) {
+				numAttacks = multiattackRules['ranged'];
+				console.log(`MookAI | Using ranged multiattack count: ${numAttacks}`);
+			}
+		}
+
+		console.log(`MookAI | Final attack count for ${name}: ${numAttacks}`);
+		action_.data.attackCount = numAttacks;
+
 		const attackDelay = game.settings.get("mookAI", "AttackDelay") ?? 500;
-		const numAttacks = action_.data.attackCount || 1;
 
 		if (this.actionsUsed < this.settings.actionsPerTurn) {
 			console.log(`MookAI | Executing ${numAttacks} attacks`);
