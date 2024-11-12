@@ -1,0 +1,26 @@
+.mook-action-dialog .movement-options {
+    margin-bottom: 1em;
+}
+
+.mook-action-dialog .action-card {
+    display: flex;
+    padding: 0.5em;
+    margin: 0.5em 0;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.mook-action-dialog .action-card.selected {
+    background-color: rgba(0, 255, 0, 0.1);
+    border-color: #0f0;
+}
+
+.mook-action-dialog .action-details {
+    margin-left: 1em;
+}
+
+.mook-action-dialog .action-cost {
+    font-style: italic;
+    color: #666;
+}

@@ -307,23 +307,48 @@ export class Mook
 					await new Promise(async (resolve) => {
 						let attacksInProgress = 0;
 						
+						// Pre-check multiattack count
+						if (this.mookModel.multiattackRules) {
+							const weapon = action.data.weapon;
+							const name = weapon.name;
+							const isRanged = weapon.system?.actionType === 'rwak';
+							const isMelee = weapon.system?.actionType === 'mwak';
+							const genericType = isRanged ? 'ranged' : (isMelee ? 'melee' : null);
+							
+							// Check specific weapon name first, then fallback to generic type
+							const attackType = Object.keys(this.mookModel.multiattackRules).find(type => {
+								const normalizedType = type.toLowerCase().replace(/\s+/g, '');
+								const normalizedName = name.toLowerCase().replace(/\s+/g, '');
+								return normalizedName.includes(normalizedType) || normalizedType.includes(normalizedName);
+							}) || genericType;
+
+							if (attackType && this.mookModel.multiattackRules[attackType]) {
+								attacksInProgress = this.mookModel.multiattackRules[attackType];
+							}
+						}
+
+						// If no multiattack found, set to 1
+						if (attacksInProgress === 0) {
+							attacksInProgress = 1;
+						}
+
+						console.log(`MookAI | Expecting ${attacksInProgress} attacks`);
+						
 						const completeHook = Hooks.on('midi-qol.RollComplete', () => {
 							attacksInProgress--;
+							console.log(`MookAI | Attacks remaining: ${attacksInProgress}`);
 							if (attacksInProgress === 0) {
 								Hooks.off('midi-qol.RollComplete', completeHook);
 								resolve();
 							}
 						});
 
-						while (this.mookModel.canAttack) {
-							attacksInProgress++;
-							await this.mookModel.attack(action);
-						}
+						await this.mookModel.attack(action);
 						
-						// If no attacks were made, resolve immediately
+						// If no attacks were actually made, resolve immediately
 						if (attacksInProgress === 0) {
 							Hooks.off('midi-qol.RollComplete', completeHook);
-							resolve();
+								resolve();
 						}
 					});
 				} else {
@@ -339,142 +364,124 @@ export class Mook
 					this.handleFailure (new Error ("Failed to take step"));
 				break;
 			case (ActionType.TRAVERSE):
-				if (this.debug) console.log ("Traversing");
+				if (this.debug) console.log("Traversing");
 
-				if (action.cost > 0)
-				{
+				if (action.cost > 0) {
 					this.utility.path = action.data.path;
-					this.utility.highlightPoints (action.data.path.path.map (s => s.origin));
+					this.utility.highlightPoints(action.data.path.path.map(s => s.origin));
 				}
 
-				// Get the planned attack action and all available actions
-				const plannedAction = this.plan.find(a => a.actionType === ActionType.ATTACK);
+				const plannedAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
 				const weapon = plannedAction?.data?.weapon;
-				const allActions = this.token.actor.items.filter(i => i.type === "weapon" || (i.type === "feat" && i.name.toLowerCase().includes("multiattack")));
+				const allActions = this.token.actor.items.filter(i => 
+					i.type === "weapon" || (i.type === "feat" && i.name.toLowerCase().includes("multiattack"))
+				);
 
-				// Create the dialog content
 				let dialogContent = `
 					<div class="mook-action-dialog">
-						<h3>Current Action</h3>
-						<div class="action-card selected">
-							<img src="${weapon?.img}" width="36" height="36"/>
-							<div class="action-details">
-								<h4>${weapon?.name}</h4>
-								<p>${weapon?.system?.description?.value || ''}</p>
-								<div class="action-cost">
-									${weapon?.system?.activation?.type || ''} action
-									(${weapon?.system?.activation?.cost || 1} actions)
-								</div>
-							</div>
+						<h3>Movement Options</h3>
+						<div class="movement-options">
+							<label>
+								<input type="radio" name="movement" value="move" checked>
+								Move to target (${action.cost} movement)
+							</label>
+							<label>
+								<input type="radio" name="movement" value="stay">
+								Stay in current position
+							</label>
 						</div>
-						
+
 						<h3>Available Actions</h3>
 						<div class="action-list">
-							${allActions.map(item => `
-								<div class="action-card" data-item-id="${item.id}">
-									<img src="${item.img}" width="36" height="36"/>
-									<div class="action-details">
-										<h4>${item.name}</h4>
-										<p>${item.system?.description?.value || ''}</p>
-										<div class="action-cost">
-											${item.system?.activation?.type || ''} action
-											(${item.system?.activation?.cost || 1} actions)
+							${allActions.map(item => {
+								// Calculate number of attacks
+								let numAttacks = 1;
+								const itemName = item.name.toLowerCase();
+								if (this.mookModel.multiattackRules) {
+									const attackType = Object.entries(this.mookModel.multiattackRules).find(([type, _]) => {
+										const normalizedType = type.toLowerCase().replace(/\s+/g, '');
+										return itemName.includes(normalizedType) || 
+											   (type.includes('melee') && item.system?.actionType === 'mwak') ||
+											   (type.includes('ranged') && item.system?.actionType === 'rwak');
+									});
+									if (attackType) numAttacks = attackType[1];
+								}
+								
+								return `
+									<div class="action-card ${item.id === weapon?.id ? 'selected' : ''}" data-item-id="${item.id}">
+										<div class="attack-count">${numAttacks}×</div>
+										<img src="${item.img}" width="36" height="36"/>
+										<div class="action-details">
+											<h4>${item.name}</h4>
+											<p>${item.system?.description?.value || ''}</p>
+											<div class="action-cost">
+												${item.system?.activation?.type || ''} action
+												(${item.system?.activation?.cost || 1} actions)
+											</div>
 										</div>
 									</div>
-								</div>
-							`).join('')}
+								`;
+							}).join('')}
 						</div>
 						
 						<h3>Multiattack Details</h3>
 						<div class="multiattack-info">
 							${this.mookModel.multiattackRules ? 
 								Object.entries(this.mookModel.multiattackRules)
-									.map(([type, count]) => `<p>${count}x ${type}</p>`)
+									.map(([type, count]) => `<p>${count}× ${type}</p>`)
 									.join('') : 
 								'No multiattack available'}
 						</div>
 					</div>
 				`;
 
-				if (this.token.actor.hasPlayerOwner)
-					dialogContent = this.pcWarning + dialogContent;
-
-				// Add some basic CSS
-				dialogContent = `
-					<style>
-						.mook-action-dialog .action-card {
-							display: flex;
-							gap: 10px;
-							padding: 5px;
-							margin: 5px 0;
-							border: 1px solid #ccc;
-							border-radius: 5px;
-						}
-						.mook-action-dialog .action-card.selected {
-							border-color: #ff6400;
-							background: rgba(255, 100, 0, 0.1);
-						}
-						.mook-action-dialog .action-details {
-							flex: 1;
-						}
-						.mook-action-dialog .action-cost {
-							font-style: italic;
-							color: #666;
-						}
-					</style>
-					${dialogContent}
-				`;
-
-				let dialogPromise = new Promise((resolve, reject) => {
-					const dialog = new Dialog({
-						title: "Confirm Mook Action",
+				let dialogResult = await new Promise((resolve, reject) => {
+					new Dialog({
+						title: "Confirm Mook Actions",
 						content: dialogContent,
 						buttons: {
-							approve: {
-								label: game.i18n.localize ("Approve"),
-								callback: () => { resolve (); }
+							confirm: {
+								label: "Confirm",
+								callback: (html) => {
+									resolve({
+										movement: html.find('input[name="movement"]:checked').val(),
+										selectedActionId: html.find('.action-card.selected').data('item-id')
+									});
+								}
 							},
-							reject: {
-								label: game.i18n.localize ("Reject"),
-								callback: () => { reject (); }
+							cancel: {
+								label: "Cancel",
+								callback: () => reject(new Abort("Action cancelled by user"))
 							}
 						},
-						default: "approve",
-						close: reject
-					});
-
-					dialog.render (true);
-					dialog.position.top = 120;
-					dialog.position.left = 120;
-
-					// Add click handlers for action selection
-					setTimeout(() => {
-						const actionCards = dialog.element.find('.action-card');
-						actionCards.on('click', (event) => {
-							const newItemId = event.currentTarget.dataset.itemId;
-							const newItem = this.token.actor.items.get(newItemId);
-							if (newItem) {
-								// Update the planned attack action
-								plannedAction.data.weapon = newItem;
-								dialog.render(true);
-							}
-						});
-					}, 100);
+						default: "confirm",
+						render: (html) => {
+							html.find('.action-card').click(function() {
+								html.find('.action-card').removeClass('selected');
+								$(this).addClass('selected');
+							});
+						},
+						close: () => reject(new Abort("Dialog closed"))
+					}).render(true);
 				});
 
-				try {
-					await dialogPromise;
-				}
-				catch (error)
-				{
-					this.handleFailure (new Abort ("User aborted plan"));
+				if (dialogResult.movement === 'move' && action.cost > 0 && action.data.path) {
+					const path = action.data.path;
+					const segments = path.within(action.data.dist);
+					
+					for (let i = 1; i < segments.length; i++) {
+						if (!await this.move(segments[i])) {
+							throw new Error("Failed to move to segment");
+						}
+					}
 				}
 
-				if (action.cost > 0)
-				{
-					this.utility.clearHighlights ();
-					if (! await this.utility.traverse (action.data.dist, this.rotationDelay, this.moveDelay))
-						this.handleFailure (new Error ("Failed to traverse path"));
+				if (dialogResult.selectedActionId && dialogResult.selectedActionId !== weapon?.id) {
+					const newWeapon = this.token.actor.items.get(dialogResult.selectedActionId);
+					const attackAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
+					if (attackAction) {
+						attackAction.data.weapon = newWeapon;
+					}
 				}
 				break;
 			}
@@ -724,3 +731,4 @@ export class Mook
 
 	get visibleTargets () { return this._visibleTargets; }
 }
+

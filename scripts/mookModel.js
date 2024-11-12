@@ -235,39 +235,77 @@ class MookModel5e extends MookModel
 			i.name.toLowerCase().includes("multiattack")
 		);
 
-		if (!features.length) return null;
+		console.log('MookAI | Searching for multiattack features:', features);
+
+		if (!features.length) {
+			console.log('MookAI | No multiattack features found');
+			return null;
+		}
 
 		const description = features[0].system.description.value;
-		if (!description) return null;
+		if (!description) {
+			console.log('MookAI | Multiattack feature has no description');
+			return null;
+		}
 
-		// Parse the HTML description
+		console.log('MookAI | Parsing multiattack description:', description);
+
 		const parser = new DOMParser();
 		const doc = parser.parseFromString(description, 'text/html');
 		const text = doc.body.textContent.toLowerCase();
 
-		// Common patterns
 		const numberWords = ['one', 'two', 'three', 'four', 'five', 'six'];
 		const attacks = {};
 
-		// Parse numbers (both written and numeric)
-		numberWords.forEach((word, index) => {
-			if (text.includes(word)) {
-				const match = text.match(new RegExp(`${word}\\s+([\\w\\s]+)(?:attack|attacks)`));
-				if (match) {
+		// Split on "or" to handle multiple attack options
+		const attackOptions = text.split(/\s+or\s+/);
+		
+		attackOptions.forEach(option => {
+			// Handle generic melee/ranged attacks
+			if (option.includes('melee')) {
+				numberWords.forEach((word, index) => {
+					if (option.includes(word)) {
+						attacks['melee'] = index + 1;
+					}
+				});
+				const numericMatch = option.match(/(\d+)\s+melee/);
+				if (numericMatch) {
+					attacks['melee'] = parseInt(numericMatch[1]);
+				}
+			}
+			
+			if (option.includes('ranged')) {
+				numberWords.forEach((word, index) => {
+					if (option.includes(word)) {
+						attacks['ranged'] = index + 1;
+					}
+				});
+				const numericMatch = option.match(/(\d+)\s+ranged/);
+				if (numericMatch) {
+					attacks['ranged'] = parseInt(numericMatch[1]);
+				}
+			}
+
+			// Handle specific weapon attacks
+			numberWords.forEach((word, index) => {
+				const match = option.match(new RegExp(`${word}\\s+([\\w\\s]+)(?:attack|attacks)`));
+				if (match && !match[1].includes('melee') && !match[1].includes('ranged')) {
 					attacks[match[1].trim()] = index + 1;
 				}
+			});
+
+			const numericMatch = option.match(/(\d+)\s+([\w\s]+)(?:attack|attacks)/g);
+			if (numericMatch) {
+				numericMatch.forEach(match => {
+					const [_, num, type] = match.match(/(\d+)\s+([\w\s]+)(?:attack|attacks)/);
+					if (!type.includes('melee') && !type.includes('ranged')) {
+						attacks[type.trim()] = parseInt(num);
+					}
+				});
 			}
 		});
 
-		// Parse numeric values
-		const numericMatch = text.match(/(\d+)\s+([\w\s]+)(?:attack|attacks)/g);
-		if (numericMatch) {
-			numericMatch.forEach(match => {
-				const [_, num, type] = match.match(/(\d+)\s+([\w\s]+)(?:attack|attacks)/);
-				attacks[type.trim()] = parseInt(num);
-			});
-		}
-
+		console.log('MookAI | Final multiattack rules:', attacks);
 		return attacks;
 	}
 
@@ -297,56 +335,55 @@ class MookModel5e extends MookModel
 		if (!this.canAttack) return;
 
 		const name = action_.data.weapon.name;
+		const weapon = action_.data.weapon;
+		console.log(`MookAI | Attempting attack with ${name}`);
+		
+		const attackDelay = game.settings.get("mookAI", "AttackDelay") ?? 500; // Default 500ms delay
 		
 		// Check for multiattack rules
-		if (this.multiattackRules) {
-			// Find matching attack type (fuzzy match)
-			const attackType = Object.keys(this.multiattackRules).find(type => 
-				name.toLowerCase().includes(type)
-			);
+		if (this.multiattackRules && !action_.data.isMultiattack) {
+			console.log('MookAI | Multiattack rules found:', this.multiattackRules);
 			
-			if (attackType) {
-				const numAttacks = this.multiattackRules[attackType];
-				for (let i = 0; i < numAttacks; i++) {
-					await this.doAttack(name);
+			// Check for weapon-specific multiattack
+			const attackType = Object.keys(this.multiattackRules).find(type => {
+				const normalizedType = type.toLowerCase().replace(/\s+/g, '');
+				const normalizedName = name.toLowerCase().replace(/\s+/g, '');
+				console.log(`MookAI | Comparing "${normalizedType}" with "${normalizedName}"`);
+				return normalizedName.includes(normalizedType) || normalizedType.includes(normalizedName);
+			});
+
+			// Check for generic melee/ranged multiattack
+			const isRanged = weapon.system?.actionType === 'rwak';
+			const isMelee = weapon.system?.actionType === 'mwak';
+			const genericType = isRanged ? 'ranged' : (isMelee ? 'melee' : null);
+			
+			const matchedType = attackType || (this.multiattackRules[genericType] ? genericType : null);
+			
+			if (matchedType) {
+				const numAttacks = this.multiattackRules[matchedType];
+				console.log(`MookAI | Matched ${matchedType} for ${numAttacks} attacks`);
+				
+				if (this.actionsUsed < this.settings.actionsPerTurn) {
+					console.log(`MookAI | Executing ${numAttacks} attacks as part of multiattack`);
+					for (let i = 0; i < numAttacks; i++) {
+						console.log(`MookAI | Attack ${i + 1} of ${numAttacks}`);
+						await this.doAttack(name);
+						if (i < numAttacks - 1) { // Don't delay after the last attack
+							await new Promise(resolve => setTimeout(resolve, attackDelay));
+						}
+					}
+					++this.actionsUsed;
+					console.log('MookAI | Multiattack action used, total actions:', this.actionsUsed);
+					return;
 				}
-				return;
+			} else {
+				console.log('MookAI | No matching multiattack type found for:', name);
 			}
 		}
-
-		// Fall back to original attack logic if no multiattack rule matches
-		this._actions.filter(a => a.type === "attack" && a.can()).forEach(a => {
-			if (a.data.duration === "full")
-			{
-				if (this.actionsUsed >= this.settings.actionsPerTurn) return;
-
-				for (let i = 0; i < this.settings.attacksPerAction; ++i)
-					this.doAttack (name);
-
-				++this.actionsUsed;
-				// todo: a.act is doAttack
-				a.act ();
-			}
-			else if (a.data.duration === "bonus")
-			{
-				if (this.bonusActionUsed) return;
-
-				for (let i = 0; i < this.settings.attacksPerBonusAction; ++i)
-					this.doAttack (name);
-
-				this.bonusActionUsed = true;
-				a.act ();
-				return;
-			}
-			else
-			{
-				for (let i = 0; i < this.settings.attacksPerFreeAction; ++i)
-					this.doAttack (name);
-
-				a.act ();
-				return;
-			}
-		});
+		
+		// Single attack if no multiattack found
+		await this.doAttack(name);
+		++this.actionsUsed;
 	}
 
 	_resetResources ()

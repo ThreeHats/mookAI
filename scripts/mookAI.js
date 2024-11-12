@@ -186,6 +186,20 @@ export function initAI ()
 		default: true
 	});
 
+	game.settings.register("mookAI", "AttackDelay", {
+		name: "Attack Delay",
+		hint: "Delay between multiple attacks in milliseconds (helps prevent roll conflicts)",
+		scope: "world",
+		config: true,
+		type: Number,
+		default: 500,
+		range: {
+			min: 0,
+			max: 5000,
+			step: 100
+		}
+	});
+
 	Hooks.on ("ready", () => {
 		try
 		{
