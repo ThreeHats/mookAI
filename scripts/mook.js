@@ -78,25 +78,47 @@ export class Mook
 	async sense ()
 	{
 		this.pathManager.clearAll ();
+		console.log("MookAI | Starting sense for", this.token.name);
 
 		this._visibleTargets = game.combat.combatants.filter (combatant => {
 			const id = combatant.tokenId;
+			const token = canvas.tokens.get (id);
+
+			console.log("MookAI | Checking potential target:", token.name, {
+				disposition: token.document.disposition,
+				mookDisposition: this.token.document.disposition,
+				inCombat: token.inCombat,
+				health: this.mookModel.getCurrentHealth (token)
+			});
+
 			// Even mooks won't target themselves on purpose
 			if (id === this.token.id) return false;
 
-			const token = canvas.tokens.get (id);
+
+			// Check disposition - target hostiles if friendly, friendlies if hostile
+			const mookDisposition = this.token.document.disposition;
+			const targetDisposition = token.document.disposition;
+			
+			// Skip secret tokens (-2)
+			if (targetDisposition === -2) return false;
+			// Skip neutral tokens (0) unless configured otherwise
+			if (targetDisposition === 0) return false;
+			// Target opposite disposition (hostile targets friendly, friendly targets hostile)
+			if (mookDisposition * targetDisposition !== -1) return false;
 
 			// todo: add "factions" to allow targeting of npcs
-			if (! this.isPC (token)) return false;
+			// if (! this.isPC (token)) return false;
 			// This shouldn't be possible
 			if (! token.inCombat) return false;
-			// Don't attack downed PCs
+			// Don't attack downed tokens
 			if (this.mookModel.getCurrentHealth (token) <= 0) return false;
 			// If the mook doesn't have vision, then it can see everyone. This choice avoids many problems.
 			if (this.mookModel.hasVision && ! this.canSee (token.id)) return false;
 
 			return true;
 		}).map (c => { return canvas.tokens.get (c.tokenId); });
+
+		console.log("MookAI | Found targets:", this._visibleTargets.map(t => t.name));
 
 		// Todo: compute paths between tokens when one moves and then select paths here. 
 		for (let t of this.visibleTargets)
