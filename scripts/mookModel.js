@@ -491,22 +491,25 @@ class MookModel5e extends MookModel
 		return attacks.some (a => a.data.duration === "free" && a.can ());
 	}
 
-	get needsDash() {
+	get canZoom() {
 		return this.useDashAction;
 	}
 
-	get canZoom() {
-		console.log("MookAI | useDashAction: ", this.useDashAction);
-		console.log("MookAI | needsDash: ", this.needsDash);
-		console.log("MookAI | zoomsRemaining: ", this.zoomsRemaining);
-		return this.needsDash;
+	get dashMovement() {
+		return this.baseTime * 2;
 	}
 
-	get dashMovement()
-	{
-		return this.baseTime * 2;  // Standard D&D 5e dash doubles movement
+	get time() {
+		return this.baseTime * (this.canZoom ? 2 : 1);
 	}
 
+	get baseMovement() {
+		return this.time;
+	}
+
+	get availableMovement() {
+		return this.time * (1 + this.zoomsRemaining);
+	}
 
 	// Get various token data
 	getCurrentHealth (token_ = this.token)
@@ -536,34 +539,11 @@ class MookModel5e extends MookModel
 		return speed / this.gridDistance;
 	}
 	
-	get time()
-	{
-		const dashMultiplier = this.canZoom ? 2 : 1;
-		const totalTime = this.baseTime * dashMultiplier;
-		
-		console.log('MookAI | Time calculation:', {
-			baseTime: this.baseTime,
-			canZoom: this.canZoom,
-			dashMultiplier,
-			totalTime
-		});
-		
-		return totalTime;
-	}
-	
 	get zoomsPerTurn ()
 	{
 		if (! this.useDashAction)
 			return 0;
 
 		return this.settings.dashActionsPerTurn + this.hasDashBonusAction + this.hasDashFreeAction;
-	}
-
-	get baseMovement() {
-		return this.time;
-	}
-
-	get availableMovement() {
-		return this.time * (1 + this.zoomsRemaining);
 	}
 };
