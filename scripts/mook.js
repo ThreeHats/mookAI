@@ -620,6 +620,7 @@ export class Mook
 
 	async cleanup ()
 	{
+		// todo: Undo all actions
 		console.log(`Cleaning up mook: ${this.token.name || 'unnamed'}`);
 		this.utility.clearHighlights ();
 		this.clearTargets ();
