@@ -490,18 +490,21 @@ class MookModel5e extends MookModel
 
 		return attacks.some (a => a.data.duration === "free" && a.can ());
 	}
-	get canZoom ()
-	{ 
-		const dashes = this._actions.filter (a => a.type === "dash");
 
-		if (this.actionsUsed < this.settings.actionsPerTurn
-		    && dashes.some (a => a.data.duration === "full" && a.can ()))
-			return true;
+	get needsDash() {
+		return this.useDashAction;
+	}
 
-		if (! this.bonusActionUsed && dashes.some (a => a.data.duration === "bonus" && a.can ()))
-			return true;
+	get canZoom() {
+		console.log("MookAI | useDashAction: ", this.useDashAction);
+		console.log("MookAI | needsDash: ", this.needsDash);
+		console.log("MookAI | zoomsRemaining: ", this.zoomsRemaining);
+		return this.needsDash;
+	}
 
-		return dashes.some (a => a.data.duration === "free" && a.can ());
+	get dashMovement()
+	{
+		return this.baseTime * 2;  // Standard D&D 5e dash doubles movement
 	}
 
 

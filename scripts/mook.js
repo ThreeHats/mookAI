@@ -405,9 +405,44 @@ export class Mook
 			case (ActionType.TRAVERSE):
 				if (this.debug) console.log("Traversing");
 
-				if (action.cost > 0) {
+				if (action.cost > 0 && action.data.path) {
+					console.log('MookAI | Path data:', {
+						pathObject: action.data.path,
+						pathArray: action.data.path.path,
+						cost: action.cost,
+						dist: action.data.dist
+					});
+
+					// Store the path in utility as before
 					this.utility.path = action.data.path;
-					this.utility.highlightPoints(action.data.path.path.map(s => s.origin));
+
+					// Use the same path access method as the original code
+					const points = action.data.path.path.map(s => s.origin);
+					
+					// Check if we need to dash
+					const plannedAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
+					const weapon = plannedAction?.data?.weapon;
+					const isMeleeAttack = weapon?.system?.properties?.mwak || 
+										 (weapon?.system?.actionType === 'mwak');
+					const isDashing = isMeleeAttack && action.cost > this.mookModel.baseTime;
+					
+					// If we're dashing, use dash movement, otherwise use base movement
+					const maxMovement = isDashing ? this.mookModel.dashMovement : this.mookModel.baseTime;
+					const movablePoints = points.slice(0, Math.floor(maxMovement) + 1);
+					
+					console.log('MookAI | Movement calculation:', {
+							totalPoints: points.length,
+							isDashing,
+							baseMovement: this.mookModel.baseTime,
+							dashMovement: this.mookModel.dashMovement,
+							maxMovement,
+							movablePoints: movablePoints.length
+						});
+
+					if (movablePoints.length > 0) {
+						this.utility.clearHighlights();
+						this.utility.highlightPoints(movablePoints);
+					}
 				}
 
 				const plannedAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
@@ -550,9 +585,19 @@ export class Mook
 				if (dialogResult.movement === 'move' && action.cost > 0 && action.data.path) {
 					const path = action.data.path;
 					const segments = path.within(action.data.dist);
+					const maxMovement = this.mookModel.availableMovement;
 					
-					for (let i = 1; i < segments.length; i++) {
-						if (!await this.move(segments[i])) {
+					// Only move up to our maximum available movement
+					const movableSegments = segments.slice(0, Math.floor(maxMovement) + 1);
+					
+					console.log('MookAI | Movement calculation:', {
+						totalSegments: segments.length,
+						maxMovement,
+						movableSegments: movableSegments.length
+					});
+					
+					for (let i = 1; i < movableSegments.length; i++) {
+						if (!await this.move(movableSegments[i])) {
 							throw new Error("Failed to move to segment");
 						}
 					}
