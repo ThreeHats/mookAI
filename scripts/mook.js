@@ -200,6 +200,13 @@ export class Mook
 				data: { "path": null, "dist": target.range }
 			});
 
+		console.log('MookAI | Movement planning:', {
+			pathLength: path.valid ? path.within(target.range).length - 1 : 0,
+			currentTime: this.time,
+			baseMovement: this.mookModel.baseMovement,
+			availableMovement: this.mookModel.availableMovement
+		});
+		
 		this.plan.push (this.mookModel.faceAction (target.token));
 
 		const attackAction = target.attackAction;
@@ -410,8 +417,17 @@ export class Mook
 				);
 
 				// Check if we need to dash (melee attack and movement cost exceeds base movement)
-				const isMeleeAttack = weapon?.system.properties.mwak;
+				const isMeleeAttack = weapon?.system?.properties?.mwak || 
+									 (weapon?.system?.actionType === 'mwak');
 				const isDashing = isMeleeAttack && action.cost > this.mookModel.baseTime;
+
+				console.log('MookAI | Movement evaluation:', {
+					isMeleeAttack,
+					movementCost: action.cost,
+					baseTime: this.mookModel.baseTime,
+					canZoom: this.mookModel.canZoom,
+					isDashing,
+				});
 
 				let dialogContent = `
 					<div class="mook-action-dialog">

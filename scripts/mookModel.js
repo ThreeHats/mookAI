@@ -174,8 +174,8 @@ export class MookModel
 		return ret;
 	}
 	faceAction (token_) { return { actionType: ActionType.FACE, data: token_ }; }
-	meleAttackAction () { return { actionType: ActionType.ATTACK, data: { weapon: this.meleWeapon }}; }
-	rangedAttackAction () { return { actionType: ActionType.ATTACK, data: { weapon: this.rangedWeapon }}; }
+	meleAttackAction () { return { actionType: ActionType.ATTACK, data: { weapon: this.meleWeapon, attackType: 'mwak' }}; }
+	rangedAttackAction () { return { actionType: ActionType.ATTACK, data: { weapon: this.rangedWeapon, attackType: 'rwak' }}; }
 	randomRotateAction () { return this.rotateAction (45 * (Math.random () > 0.5 ? 1 : -1)); }
 	_resetResources () { }
 	_startTurn () { }
@@ -526,15 +526,28 @@ class MookModel5e extends MookModel
 
 	// A measure of the amount of time a mook has to do stuff
 	// todo: evaluate units
-	get time ()
+	get baseTime()
 	{
-		let speed = parseInt (this.token.actor.system.attributes.movement.walk, 10);
-		
-		if (! speed)
-			speed = 30;
-
+		let speed = parseInt(this.token.actor.system.attributes.movement.walk, 10);
+		if (!speed) speed = 30;
 		return speed / this.gridDistance;
 	}
+	
+	get time()
+	{
+		const dashMultiplier = this.canZoom ? 2 : 1;
+		const totalTime = this.baseTime * dashMultiplier;
+		
+		console.log('MookAI | Time calculation:', {
+			baseTime: this.baseTime,
+			canZoom: this.canZoom,
+			dashMultiplier,
+			totalTime
+		});
+		
+		return totalTime;
+	}
+	
 	get zoomsPerTurn ()
 	{
 		if (! this.useDashAction)
@@ -543,13 +556,11 @@ class MookModel5e extends MookModel
 		return this.settings.dashActionsPerTurn + this.hasDashBonusAction + this.hasDashFreeAction;
 	}
 
-	get baseTime() {
-		let speed = parseInt(this.token.actor.system.attributes.movement.walk, 10);
-		if (!speed) speed = 30;
-		return speed / this.gridDistance;
+	get baseMovement() {
+		return this.time;
 	}
 
-	get time() {
-		return this.baseTime * (this.useDashAction ? 2 : 1);
+	get availableMovement() {
+		return this.time * (1 + this.zoomsRemaining);
 	}
 };
