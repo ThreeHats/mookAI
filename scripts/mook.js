@@ -405,11 +405,20 @@ export class Mook
 			case (ActionType.TRAVERSE):
 				if (this.debug) console.log("Traversing");
 
+				const plannedAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
+				const weapon = plannedAction?.data?.weapon;
+				const allActions = this.token.actor.items.filter(i => 
+					i.type === "weapon" || (i.type === "feat" && i.name.toLowerCase().includes("multiattack"))
+				);
+
+				// Calculate movement details
+				let movableSegments = [];
+				let requiresDash = false;
 				if (action.cost > 0 && action.data.path) {
 					const path = action.data.path;
 					const segments = path.within(action.data.dist);
 					const maxMovement = this.mookModel.availableMovement;
-					const movableSegments = segments.slice(0, Math.floor(maxMovement) + 1);
+					movableSegments = segments.slice(0, Math.floor(maxMovement) + 1);
 					
 					if (movableSegments.length > 0) {
 						this.utility.path = action.data.path;
@@ -418,15 +427,9 @@ export class Mook
 							.map(s => s.origin));
 					}
 
-					const plannedAction = this._plan.find(a => a.actionType === ActionType.ATTACK);
-					const weapon = plannedAction?.data?.weapon;
-					const allActions = this.token.actor.items.filter(i => 
-						i.type === "weapon" || (i.type === "feat" && i.name.toLowerCase().includes("multiattack"))
-					);
-
 					const isMeleeAttack = weapon?.system?.properties?.mwak || 
 										 (weapon?.system?.actionType === 'mwak');
-					const requiresDash = isMeleeAttack && action.cost > this.mookModel.baseTime;
+					requiresDash = isMeleeAttack && action.cost > this.mookModel.baseTime;
 
 					console.log('MookAI | Movement evaluation:', {
 						isMeleeAttack,
@@ -447,16 +450,16 @@ export class Mook
 							<h3>Movement Options</h3>
 							<div class="movement-options">
 								<label>
-									<input type="radio" name="movement" value="move" checked>
+									<input type="radio" name="movement" value="move" ${action.data.path ? 'checked' : ''}>
 									 Move ${movableSegments.length - 1} spaces
 									 ${requiresDash ? ' (Requires Dash)' : ''}
 								</label>
 								<label>
-									<input type="radio" name="movement" value="stay">
+									<input type="radio" name="movement" value="stay" ${!action.data.path ? 'checked' : ''}>
 									Stay in current position
 								</label>
 							</div>
-
+							
 							<h3>Available Actions</h3>
 							<div class="action-list">
 								${allActions.map((item, index) => {
