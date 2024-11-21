@@ -426,16 +426,21 @@ export class Mook
 
 					const isMeleeAttack = weapon?.system?.properties?.mwak || 
 										 (weapon?.system?.actionType === 'mwak');
-					const isDashing = isMeleeAttack && action.cost > this.mookModel.baseTime;
+					const requiresDash = isMeleeAttack && action.cost > this.mookModel.baseTime;
 
 					console.log('MookAI | Movement evaluation:', {
 						isMeleeAttack,
 						movementCost: action.cost,
 						baseTime: this.mookModel.baseTime,
 						canZoom: this.mookModel.canZoom,
-						isDashing,
+						requiresDash,
 						movableDistance: movableSegments.length
 					});
+
+					// Before creating dialogContent, prepare the descriptions
+					const enrichedDescriptions = await Promise.all(allActions.map(item => 
+						TextEditor.enrichHTML(item.system?.description?.value || '')
+					));
 
 					let dialogContent = `
 						<div class="mook-action-dialog">
@@ -443,9 +448,8 @@ export class Mook
 							<div class="movement-options">
 								<label>
 									<input type="radio" name="movement" value="move" checked>
-									${isDashing ? 
-										`Dash towards target (${movableSegments.length - 1} movement)` : 
-										`Move to target (${action.cost} movement)`}
+									 Move ${movableSegments.length - 1} spaces
+									 ${requiresDash ? ' (Requires Dash)' : ''}
 								</label>
 								<label>
 									<input type="radio" name="movement" value="stay">
@@ -453,84 +457,81 @@ export class Mook
 								</label>
 							</div>
 
-							${!isDashing ? `
-								<h3>Available Actions</h3>
-								<div class="action-list">
-									${allActions.map(item => {
-										// Calculate number of attacks
-										let maxAttacks = 1;
-										const itemName = item.name.toLowerCase();
-										if (this.mookModel.multiattackRules) {
-											const attackType = Object.entries(this.mookModel.multiattackRules).find(([type, _]) => {
-												const normalizedType = type.toLowerCase().replace(/\s+/g, '');
-												return itemName.includes(normalizedType) || 
-													   (type.includes('melee') && item.system?.actionType === 'mwak') ||
-													   (type.includes('ranged') && item.system?.actionType === 'rwak');
-											});
-											if (attackType) maxAttacks = attackType[1];
-										}
-										
-										return `
-											<div class="action-card ${item.id === weapon?.id ? 'selected' : ''}" data-item-id="${item.id}">
-												<div class="attack-controls">
-													<select name="attack-count-${item.id}" class="attack-count">
-														${Array.from({length: maxAttacks}, (_, i) => i + 1).map(num => 
-															`<option value="${num}" ${num === maxAttacks ? 'selected' : ''}>${num}×</option>`
-														).join('')}
-													</select>
-												</div>
-												<img src="${item.img}" width="36" height="36"/>
-												<div class="action-details">
-													<h4>${item.name}</h4>
-													<p>${item.system?.description?.value || ''}</p>
-													<div class="action-cost">
-														${item.system?.activation?.type || ''} action
-														(${item.system?.activation?.cost || 1} actions)
-													</div>
+							<h3>Available Actions</h3>
+							<div class="action-list">
+								${allActions.map((item, index) => {
+									// Calculate number of attacks
+									let maxAttacks = 1;
+									const itemName = item.name.toLowerCase();
+									if (this.mookModel.multiattackRules) {
+										const attackType = Object.entries(this.mookModel.multiattackRules).find(([type, _]) => {
+											const normalizedType = type.toLowerCase().replace(/\s+/g, '');
+											return itemName.includes(normalizedType) || 
+												   (type.includes('melee') && item.system?.actionType === 'mwak') ||
+												   (type.includes('ranged') && item.system?.actionType === 'rwak');
+										});
+										if (attackType) maxAttacks = attackType[1];
+									}
+									
+									return `
+										<div class="action-card ${item.id === weapon?.id ? 'selected' : ''}" 
+											 data-item-id="${item.id}">
+											<div class="attack-controls">
+												<select name="attack-count-${item.id}" class="attack-count"
+														${requiresDash ? 'disabled' : ''}>
+													${Array.from({length: maxAttacks}, (_, i) => i + 1).map(num => 
+														`<option value="${num}" ${num === maxAttacks ? 'selected' : ''}>${num}×</option>`
+													).join('')}
+												</select>
+											</div>
+											<img src="${item.img}" width="36" height="36"/>
+											<div class="action-details">
+												<h4>${item.name}</h4>
+												<p>${enrichedDescriptions[index]}</p>
+												<div class="action-cost">
+													${item.system?.activation?.cost || 1}
+													${item.system?.activation?.type || 'action'}
+													${requiresDash ? '<span class="dash-warning">(Requires action for Dash)</span>' : ''}
 												</div>
 											</div>
-										`;
-									}).join('')}
-								</div>
-								
-								<h3>Multiattack Details</h3>
-								<div class="multiattack-info">
-									${this.mookModel.multiattackRules ? 
-										Object.entries(this.mookModel.multiattackRules)
-											.map(([type, count]) => `<p>${count}× ${type}</p>`)
-											.join('') : 
-										'No multiattack available'}
-								</div>
-							` : `
-								<div class="dash-message">
-									<p>Using all actions to move towards target</p>
-								</div>
-							`}
+										</div>
+									`;
+								}).join('')}
+							</div>
+							
+							${this.mookModel.multiattackRules ? `
+							<h3>Multiattack Details</h3>
+							<div class="multiattack-info">
+								${Object.entries(this.mookModel.multiattackRules)
+									.map(([type, count]) => `<p>${count}× ${type}</p>`)
+									.join('')}
+							</div>
+							` : ''}
 						</div>
 					`;
 
 					let dialogResult = await new Promise((resolve, reject) => {
 						new Dialog({
-							title: isDashing ? "Confirm Dash Action" : "Confirm Mook Actions",
+							title: "Confirm Mook Actions",
 							content: dialogContent,
 							buttons: {
 								confirm: {
 									label: "Confirm",
 									callback: (html) => {
-										if (isDashing) {
-											resolve({ movement: html.find('input[name="movement"]:checked').val() });
-										} else {
-											const selectedCard = html.find('.action-card.selected');
-											if (!selectedCard.length) {
-												ui.notifications.warn("Please select an action");
-												return;
-											}
-											resolve({
-												movement: html.find('input[name="movement"]:checked').val(),
-												selectedActionId: selectedCard.data('item-id'),
-												attackCount: parseInt(selectedCard.find('select[name^="attack-count"]').val())
-											});
+										const selectedCard = html.find('.action-card.selected');
+										const movement = html.find('input[name="movement"]:checked').val();
+										
+										if (movement === 'move' && !selectedCard.length && !requiresDash) {
+											ui.notifications.warn("Please select an action or stay in place");
+											return;
 										}
+										
+										resolve({
+											movement,
+											selectedActionId: selectedCard.data('item-id'),
+											attackCount: parseInt(selectedCard.find('select[name^="attack-count"]').val() || 0),
+											requiresDash
+										});
 									}
 								},
 								cancel: {
@@ -540,15 +541,40 @@ export class Mook
 							},
 							default: "confirm",
 							render: (html) => {
-								if (!isDashing) {
-									html.find('.action-card').click(function() {
-										html.find('.action-card').removeClass('selected');
-										$(this).addClass('selected');
-									});
-									if (weapon) {
-										html.find(`.action-card[data-item-id="${weapon.id}"]`).addClass('selected');
+								const updateActionCards = (isDashing) => {
+									const cards = html.find('.action-card');
+									if (isDashing) {
+										cards.removeClass('selected');
+										html.find('.attack-count').prop('disabled', true);
+									} else {
+										html.find('.attack-count').prop('disabled', false);
+										if (weapon) {
+											html.find(`.action-card[data-item-id="${weapon.id}"]`).addClass('selected');
+										}
 									}
-								}
+								};
+
+								html.find('.action-card').click(function() {
+									const movementInput = html.find('input[name="movement"]:checked');
+									const isDashing = movementInput.val() === 'move' && requiresDash;
+									
+									if (isDashing) {
+										ui.notifications.warn("Cannot select actions while dashing");
+										return;
+									}
+									
+									html.find('.action-card').removeClass('selected');
+									$(this).addClass('selected');
+								});
+
+								html.find('input[name="movement"]').change(function() {
+									const isDashing = $(this).val() === 'move' && requiresDash;
+									updateActionCards(isDashing);
+								});
+
+								// Initial state
+								const initialIsDashing = html.find('input[name="movement"]:checked').val() === 'move' && requiresDash;
+								updateActionCards(initialIsDashing);
 							},
 							close: () => reject(new Abort("Dialog closed"))
 						}).render(true);
@@ -576,18 +602,21 @@ export class Mook
 						}
 					}
 
-					// Only update attack action if we're not dashing
-					if (!isDashing && plannedAction) {
-						if (dialogResult.selectedActionId !== weapon?.id) {
-							const newWeapon = this.token.actor.items.get(dialogResult.selectedActionId);
-							plannedAction.data.weapon = newWeapon;
-						}
-						plannedAction.data.attackCount = dialogResult.attackCount;
-					} else if (isDashing) {
-						// Remove any planned attacks if we're dashing
-						const attackIndex = this._plan.findIndex(a => a.actionType === ActionType.ATTACK);
-						if (attackIndex !== -1) {
-							this._plan.splice(attackIndex, 1);
+					// Update attack plans based on dialog choices
+					if (plannedAction) {
+						if (dialogResult.movement === 'move' && dialogResult.requiresDash) {
+							console.log("Removing attack action due to dash");
+							const attackIndex = this._plan.findIndex(a => a.actionType === ActionType.ATTACK);
+							if (attackIndex !== -1) {
+								this._plan.splice(attackIndex, 1);
+							}
+						} else if (dialogResult.selectedActionId) {
+							console.log(`Updating attack with weapon ID: ${dialogResult.selectedActionId}`);
+							if (dialogResult.selectedActionId !== weapon?.id) {
+								const newWeapon = this.token.actor.items.get(dialogResult.selectedActionId);
+								plannedAction.data.weapon = newWeapon;
+							}
+							plannedAction.data.attackCount = dialogResult.attackCount;
 						}
 					}
 				}

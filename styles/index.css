@@ -24,3 +24,38 @@
     font-style: italic;
     color: #666;
 }
+
+.mook-action-dialog .action-card:hover {
+    background-color: rgba(0, 255, 0, 0.05);
+    border-color: #0f0;
+}
+
+.mook-action-dialog .action-card.selected:hover {
+    background-color: rgba(0, 255, 0, 0.15);
+}
+
+.mook-action-dialog .dash-warning {
+    color: #aa0000;
+    font-weight: bold;
+    margin-left: 0.5em;
+}
+
+.mook-action-dialog h3 {
+    margin-top: 1em;
+    color: #444;
+    border-bottom: 2px solid #ddd;
+    padding-bottom: 0.3em;
+}
+
+.mook-action-dialog .movement-options label {
+    display: block;
+    margin: 0.5em 0;
+    padding: 0.5em;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.mook-action-dialog .movement-options label:hover {
+    background-color: rgba(0, 255, 0, 0.05);
+}
