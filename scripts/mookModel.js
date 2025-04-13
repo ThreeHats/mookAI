@@ -227,6 +227,9 @@ class MookModel5e extends MookModel
 		// Creatures in 5e may only use one bonus action
 		this.bonusActionUsed = false;
 		this.multiattackRules = this._parseMultiattack();
+		this.totalAttacks = this.multiattackRules ? 
+			Object.values(this.multiattackRules).reduce((sum, count) => sum + count, 0) : 1;
+		this.attacksExecuted = 0;
 	}
 
 	_parseMultiattack() {
@@ -258,6 +261,42 @@ class MookModel5e extends MookModel
 		const numberWords = ['one', 'two', 'three', 'four', 'five', 'six'];
 		const attacks = {};
 
+		// Check for the specific pattern: "makes X attacks: one with Y and one with Z"
+		const specificAttacksPattern = /makes\s+(?:(\w+)|(\d+))\s+attacks?:\s+(.*)/i;
+		const specificMatch = text.match(specificAttacksPattern);
+		
+		if (specificMatch) {
+			console.log('MookAI | Found specific attacks pattern');
+			const attacksDescription = specificMatch[3]; // The part after "makes X attacks:"
+			
+			// Find all weapon mentions using "with" pattern
+			// Updated pattern to correctly match individual weapon mentions
+			const weaponMatches = [...attacksDescription.matchAll(/(\w+)\s+with\s+(?:its|his|her|their)\s+([\w\s]+?)(?:\s+and\s+|$|\.)/g)];
+			
+			if (weaponMatches.length > 0) {
+				console.log('MookAI | Found weapon mentions:', weaponMatches);
+				
+				// Process each weapon mention
+				weaponMatches.forEach(match => {
+					const countWord = match[1].trim(); // "one", "two", etc.
+					const weaponName = match[2].trim(); // "spear", "tail", etc.
+					
+					let count = 1;
+					// Convert word to number if possible
+					const wordIndex = numberWords.indexOf(countWord);
+					if (wordIndex >= 0) {
+						count = wordIndex + 1;
+					} else if (!isNaN(parseInt(countWord))) {
+						count = parseInt(countWord);
+					}
+					
+					// Store the weapon-specific attack count
+					attacks[weaponName] = count;
+				});
+			}
+		}
+
+		// Continue with existing parsing logic for more general patterns
 		// Split on "or" to handle multiple attack options
 		const attackOptions = text.split(/\s+or\s+/);
 		
@@ -333,33 +372,53 @@ class MookModel5e extends MookModel
 	async attack (action_)
 	{
 		if (action_.actionType !== ActionType.ATTACK) return;
-		if (!this.canAttack) {
+		if (!this.canAttack && this.attacksExecuted === 0) {
 			console.log('MookAI | Cannot attack - no actions remaining');
 			return;
 		}
 
-		const name = action_.data.weapon.name;
+		// Make sure we're using the right weapon from the action data
+		const weapon = action_.data.weapon;
+		const name = weapon.name;
 		console.log('MookAI | Executing attack action:', {
 			weapon: name,
 			attackCount: action_.data.attackCount,
-			properties: action_.data.weapon.system.properties
+			properties: weapon.system.properties
 		});
 
-		// Use the attack count that was set during planning
+		// Use the attack count that was set during planning or dialog selection
 		const numAttacks = action_.data.attackCount || 1;
 		const attackDelay = game.settings.get("mookAI", "AttackDelay") ?? 500;
+
+		// For multiattack, we only use one action regardless of how many different weapons are used
+		const isPartOfMultiattack = this.multiattackRules && Object.keys(this.multiattackRules).length > 0;
+		const isFirstAttackOfTurn = this.attacksExecuted === 0;
 		
-		if (this.actionsUsed < this.settings.actionsPerTurn) {
-			console.log(`MookAI | Executing ${numAttacks} attacks`);
+		try {
+			console.log(`MookAI | Executing ${numAttacks} attacks with ${name}`);
+			
 			for (let i = 0; i < numAttacks; i++) {
-				console.log(`MookAI | Attack ${i + 1} of ${numAttacks}`);
+				console.log(`MookAI | Attack ${i + 1} of ${numAttacks} with ${name}`);
 				await this.doAttack(name);
+				this.attacksExecuted += 1;
+				
 				if (i < numAttacks - 1) {
 					await new Promise(resolve => setTimeout(resolve, attackDelay));
 				}
 			}
-			++this.actionsUsed;
+			
+			// Only increment the action counter when it's the first attack of a multiattack
+			// or when it's a regular attack
+			if (isFirstAttackOfTurn || !isPartOfMultiattack) {
+				++this.actionsUsed;
+				console.log(`MookAI | Action used. Total actions used: ${this.actionsUsed}`);
+			} else {
+				console.log(`MookAI | Part of multiattack, no additional action used.`);
+			}
 			return;
+		} catch (error) {
+			console.error("MookAI | Attack error:", error);
+			throw error;
 		}
 	}
 
@@ -368,6 +427,7 @@ class MookModel5e extends MookModel
 		this._actions = new Array ();
 		this.actionsUsed = 0;
 		this.bonusActionUsed = 0;
+		this.attacksExecuted = 0;
 	}
 
 	_startTurn ()
@@ -479,6 +539,18 @@ class MookModel5e extends MookModel
 
 	get canAttack ()
 	{
+		// For multiattack, allow all attacks within the same action
+		const isPartOfMultiattack = this.multiattackRules && Object.keys(this.multiattackRules).length > 0;
+		if (isPartOfMultiattack && this.attacksExecuted > 0 && this.actionsUsed === 1) {
+			const totalAttacksAllowed = Object.values(this.multiattackRules).reduce((sum, count) => sum + count, 0);
+			console.log(`MookAI | Multiattack check: executed ${this.attacksExecuted} of ${totalAttacksAllowed} allowed attacks`);
+			
+			// Still have attacks available in this multiattack
+			if (this.attacksExecuted < totalAttacksAllowed) {
+				return true;
+			}
+		}
+
 		const attacks = this._actions.filter (a => a.type === "attack");
 		
 		if (this.actionsUsed < this.settings.actionsPerTurn

@@ -491,6 +491,17 @@ export class MookAI
 		}
 		catch (e)
 		{
+			// If we get a "undefined" error, treat it as a normal completion
+			// This happens at the end of multiattack sequences
+			if (e === undefined) {
+				log("Successfully completed turn", "debug");
+				if (mook_) {
+					await mook_.endTurn();
+				}
+				this._busy = false;
+				return true;
+			}
+			
 			if (!(e instanceof Abort))
 			{
 				log("Encountered unrecoverable error:", "error");
