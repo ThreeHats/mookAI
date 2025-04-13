@@ -401,6 +401,10 @@ export class Mook
 				// Calculate movement details
 				let movableSegments = [];
 				let requiresDash = false;
+				
+				// Always show dialog even if no movement is needed
+				const showDialog = true;
+				
 				if (action.cost > 0 && action.data.path) {
 					const path = action.data.path;
 					const segments = path.within(action.data.dist);
@@ -426,7 +430,10 @@ export class Mook
 						requiresDash,
 						movableDistance: movableSegments.length
 					});
-
+				}
+				
+				// Always create and show the dialog, even if we're adjacent
+				if (showDialog) {
 					// Before creating dialogContent, prepare the descriptions
 					const enrichedDescriptions = await Promise.all(allActions.map(item => 
 						TextEditor.enrichHTML(item.system?.description?.value || '')
@@ -538,7 +545,7 @@ export class Mook
 							<div class="movement-options">
 								<label>
 									<input type="radio" name="movement" value="move" ${action.data.path ? 'checked' : ''}>
-									 Move ${movableSegments.length - 1} spaces
+									 ${action.data.path ? `Move ${movableSegments.length - 1} spaces` : 'Already adjacent to target'}
 									 ${requiresDash ? ' (Requires Dash)' : ''}
 								</label>
 								<label>
